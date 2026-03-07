@@ -1,0 +1,13 @@
+{
+  "name": "crit-marketplace",
+  "owner": {
+    "name": "Kevin Dutra"
+  },
+  "plugins": [
+    {
+      "name": "crit",
+      "source": "./plugin/crit",
+      "description": "Review markdown documents with an interactive TUI and let Claude address feedback automatically."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Built binary
+/crit
+
+# Local Claude Code config
+.claude/

@@ -1,0 +1,34 @@
+version: 2
+
+builds:
+  - main: ./cmd/crit/
+    binary: crit
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+brews:
+  - repository:
+      owner: kevindutra
+      name: homebrew-tap
+    homepage: "https://github.com/kevindutra/crit"
+    description: "Terminal review tool for markdown documents"
+    license: "MIT"
+    install: |
+      bin.install "crit"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
