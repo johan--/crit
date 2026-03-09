@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+### Fixed
+
+- `crit review --code --detach --wait` now correctly opens in a tmux split pane instead of failing with a TTY error
+
 ## 0.2.0
 
 ### Added

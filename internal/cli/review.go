@@ -67,6 +67,16 @@ func init() {
 }
 
 func runCodeReview() error {
+	// --wait without --detach: warn and ignore
+	if reviewWait && !reviewDetach {
+		fmt.Fprintln(os.Stderr, "crit: --wait requires --detach; ignoring --wait")
+		reviewWait = false
+	}
+
+	if reviewDetach {
+		return runDetachedCodeReview()
+	}
+
 	if !git.IsGitRepo() {
 		return fmt.Errorf("crit review --code requires a git repository")
 	}
@@ -105,6 +115,44 @@ func runCodeReview() error {
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	return nil
+}
+
+func runDetachedCodeReview() error {
+	if os.Getenv("TMUX") == "" {
+		return fmt.Errorf("--detach requires a tmux session (TMUX environment variable not set)")
+	}
+
+	tmuxBin, err := exec.LookPath("tmux")
+	if err != nil {
+		return fmt.Errorf("tmux binary not found on PATH: %w", err)
+	}
+
+	critBin, err := resolveExecutable()
+	if err != nil {
+		return fmt.Errorf("resolving crit binary path: %w", err)
+	}
+
+	channel := fmt.Sprintf("crit-review-%d", os.Getpid())
+	critCmd := fmt.Sprintf("CRIT_DETACHED=1 %s review --code ; tmux wait-for -S %s",
+		shellEscape(critBin), channel)
+
+	splitCmd := exec.Command(tmuxBin, "split-window", "-h", "-p", "70", critCmd)
+	if err := splitCmd.Run(); err != nil {
+		return fmt.Errorf("failed to open tmux pane: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "Opened code review in tmux pane")
+
+	if reviewWait {
+		waitCmd := exec.Command(tmuxBin, "wait-for", channel)
+		if err := waitCmd.Run(); err != nil {
+			return fmt.Errorf("review pane terminated abnormally")
+		}
+
+		fmt.Fprintln(os.Stdout, "Code review complete.")
 	}
 
 	return nil

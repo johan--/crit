@@ -69,6 +69,28 @@ func TestDetachRequiresTmux(t *testing.T) {
 	}
 }
 
+func TestCodeReviewDetachRequiresTmux(t *testing.T) {
+	orig := os.Getenv("TMUX")
+	os.Setenv("TMUX", "")
+	defer os.Setenv("TMUX", orig)
+
+	// Simulate --detach --code flags
+	reviewDetach = true
+	reviewCode = true
+	defer func() {
+		reviewDetach = false
+		reviewCode = false
+	}()
+
+	err := runCodeReview()
+	if err == nil {
+		t.Fatal("expected error when TMUX is not set")
+	}
+	if !strings.Contains(err.Error(), "requires a tmux session") {
+		t.Errorf("expected 'requires a tmux session' error, got: %s", err)
+	}
+}
+
 func TestPathResolution(t *testing.T) {
 	rel := "relative/path/doc.md"
 	abs, err := filepath.Abs(rel)
