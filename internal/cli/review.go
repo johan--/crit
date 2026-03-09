@@ -6,22 +6,33 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/kevindutra/crit/internal/git"
 	"github.com/kevindutra/crit/internal/review"
 	"github.com/kevindutra/crit/internal/tui"
 )
 
 var reviewDetach bool
 var reviewWait bool
+var reviewCode bool
 
 var reviewCmd = &cobra.Command{
-	Use:   "review <file>",
+	Use:   "review [file]",
 	Short: "Launch interactive TUI review",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if reviewCode {
+			return runCodeReview()
+		}
+
+		if len(args) == 0 {
+			return fmt.Errorf("file argument required (use --code for code review mode)")
+		}
+
 		filePath := args[0]
 
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {
@@ -52,6 +63,75 @@ func init() {
 	rootCmd.AddCommand(reviewCmd)
 	reviewCmd.Flags().BoolVar(&reviewDetach, "detach", false, "open review in a tmux split pane")
 	reviewCmd.Flags().BoolVar(&reviewWait, "wait", false, "block until the detached review completes (requires --detach)")
+	reviewCmd.Flags().BoolVar(&reviewCode, "code", false, "review code changes (multi-file mode)")
+}
+
+func runCodeReview() error {
+	if !git.IsGitRepo() {
+		return fmt.Errorf("crit review --code requires a git repository")
+	}
+
+	files, err := git.ChangedFiles()
+	if err != nil {
+		return fmt.Errorf("detecting changed files: %w", err)
+	}
+
+	ref := "HEAD"
+
+	if len(files) == 0 {
+		// Interactive fallback: try other refs
+		var fallbackErr error
+		ref, files, fallbackErr = interactiveFallback()
+		if fallbackErr != nil {
+			return fallbackErr
+		}
+	}
+
+	// Save session manifest
+	var paths []string
+	for _, f := range files {
+		paths = append(paths, f.Path)
+	}
+	session := &review.CodeReviewSession{
+		Files:     paths,
+		DiffBase:  ref,
+		CreatedAt: time.Now(),
+	}
+	if err := review.SaveSession(session); err != nil {
+		fmt.Fprintf(os.Stderr, "crit: warning: could not save session: %v\n", err)
+	}
+
+	model := tui.NewCodeReviewApp(files, ref)
+	p := tea.NewProgram(model)
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	return nil
+}
+
+func interactiveFallback() (string, []git.FileChange, error) {
+	// Try common alternatives in order
+	alternatives := []struct {
+		label string
+		ref   string
+	}{
+		{"last commit (HEAD~1)", "HEAD~1"},
+		{"base branch (main)", "main"},
+	}
+
+	for _, alt := range alternatives {
+		files, err := git.ChangedFilesFrom(alt.ref)
+		if err != nil {
+			continue
+		}
+		if len(files) > 0 {
+			fmt.Fprintf(os.Stderr, "No unstaged changes found. Using %s.\n", alt.label)
+			return alt.ref, files, nil
+		}
+	}
+
+	return "", nil, fmt.Errorf("no changed files found")
 }
 
 func runDetachedReview(filePath string) error {
